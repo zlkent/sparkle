@@ -52,6 +52,19 @@ function shouldReflectCors(origin: string | undefined): boolean {
   return !!origin && origin.startsWith('chrome-extension://')
 }
 
+function getCallerOrigin(req: express.Request): string | undefined {
+  const origin = req.headers.origin
+  if (typeof origin === 'string') return origin
+
+  const referer = req.headers.referer
+  if (typeof referer !== 'string') return undefined
+  try {
+    return new URL(referer).origin
+  } catch {
+    return undefined
+  }
+}
+
 function isAllowedOrigin(origin: string | undefined, allowedOrigins: string[] | undefined): boolean {
   const allowlist = allowedOrigins?.filter((o) => typeof o === 'string' && o.length > 0) ?? []
   if (allowlist.length === 0) return true
@@ -85,7 +98,7 @@ export async function startExtensionApiServer(): Promise<void> {
   app.disable('x-powered-by')
 
   app.use((req, res, next) => {
-    const origin = req.headers.origin
+    const origin = getCallerOrigin(req)
     const allowedOrigins = configAfter.extensionApiAllowedOrigins
 
     if (!isAllowedOrigin(origin, allowedOrigins)) {

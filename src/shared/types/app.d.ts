@@ -23,6 +23,10 @@ interface AppConfig {
   systemCorePath?: string
   corePermissionMode?: 'elevated' | 'service'
   serviceAuthKey?: string
+  extensionApiEnabled?: boolean
+  extensionApiPort?: number
+  extensionApiToken?: string
+  extensionApiAllowedOrigins?: string[]
   disableLoopbackDetector: boolean
   disableEmbedCA: boolean
   disableSystemCA: boolean

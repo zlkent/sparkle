@@ -30,6 +30,7 @@ import {
   startSubStoreBackendServer,
   startSubStoreFrontendServer
 } from '../resolve/server'
+import { startExtensionApiServer } from '../resolve/extensionApi'
 import { triggerSysProxy } from '../sys/sysproxy'
 import {
   getAppConfig,
@@ -220,6 +221,7 @@ export async function init(): Promise<void> {
   const initTasks: Promise<void>[] = [
     startSubStoreFrontendServer(),
     startSubStoreBackendServer(),
+    startExtensionApiServer(),
     startSSIDCheck()
   ]
 

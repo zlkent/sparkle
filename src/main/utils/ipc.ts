@@ -127,6 +127,7 @@ import { startMonitor } from '../resolve/trafficMonitor'
 import { closeFloatingWindow, showContextMenu, showFloatingWindow } from '../resolve/floatingWindow'
 import { getAppName } from './appName'
 import { getUserAgent } from './userAgent'
+import { resetExtensionApiToken, restartExtensionApiServer } from '../resolve/extensionApi'
 
 function ipcErrorWrapper<T>( // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fn: (...args: any[]) => Promise<T> // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -330,6 +331,8 @@ export function registerIpcMainHandlers(): void {
   ipcMain.handle('quitWithoutCore', ipcErrorWrapper(quitWithoutCore))
   ipcMain.handle('startNetworkDetection', ipcErrorWrapper(startNetworkDetection))
   ipcMain.handle('stopNetworkDetection', ipcErrorWrapper(stopNetworkDetection))
+  ipcMain.handle('restartExtensionApiServer', ipcErrorWrapper(restartExtensionApiServer))
+  ipcMain.handle('resetExtensionApiToken', ipcErrorWrapper(resetExtensionApiToken))
   ipcMain.handle('quitApp', () => app.quit())
   ipcMain.handle('notDialogQuit', () => {
     setNotQuitDialog()

@@ -7,6 +7,7 @@ import { calcTraffic } from '../utils/calc'
 import { getRuntimeConfig } from './factory'
 import { floatingWindow } from '../resolve/floatingWindow'
 import { mihomoIpcPath } from '../utils/dirs'
+import { updateConnectionCache } from './connectionCache'
 
 let axiosIns: AxiosInstance = null!
 let mihomoTrafficWs: WebSocket | null = null
@@ -381,7 +382,9 @@ const mihomoConnections = async (): Promise<void> => {
     const data = e.data as string
     connectionsRetry = 10
     try {
-      mainWindow?.webContents.send('mihomoConnections', JSON.parse(data) as ControllerConnections)
+      const info = JSON.parse(data) as ControllerConnections
+      updateConnectionCache(info)
+      mainWindow?.webContents.send('mihomoConnections', info)
     } catch {
       // ignore
     }

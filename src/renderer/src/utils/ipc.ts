@@ -542,6 +542,14 @@ export async function stopNetworkDetection(): Promise<void> {
   return ipcErrorWrapper(await window.electron.ipcRenderer.invoke('stopNetworkDetection'))
 }
 
+export async function restartExtensionApiServer(): Promise<void> {
+  return ipcErrorWrapper(await window.electron.ipcRenderer.invoke('restartExtensionApiServer'))
+}
+
+export async function resetExtensionApiToken(): Promise<string> {
+  return ipcErrorWrapper(await window.electron.ipcRenderer.invoke('resetExtensionApiToken'))
+}
+
 let applyThemeRunning = false
 const waitList: string[] = []
 export async function applyTheme(theme: string): Promise<void> {

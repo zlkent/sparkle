@@ -7,6 +7,8 @@ import {
   copyEnv,
   patchControledMihomoConfig,
   restartCore,
+  resetExtensionApiToken,
+  restartExtensionApiServer,
   startNetworkDetection,
   stopNetworkDetection
 } from '@renderer/utils/ipc'
@@ -17,8 +19,17 @@ import EditableList from '../base/base-list-editor'
 
 const emptyArray: string[] = []
 
+function isSameStringList(a: string[], b: string[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
 const AdvancedSettings: React.FC = () => {
-  const { appConfig, patchAppConfig } = useAppConfig()
+  const { appConfig, patchAppConfig, mutateAppConfig } = useAppConfig()
   const {
     controlDns = true,
     controlSniff = true,
@@ -30,12 +41,19 @@ const AdvancedSettings: React.FC = () => {
     envType = [platform === 'win32' ? 'powershell' : 'bash'],
     networkDetection = false,
     networkDetectionBypass = ['VMware', 'vEthernet'],
-    networkDetectionInterval = 10
+    networkDetectionInterval = 10,
+    extensionApiEnabled = false,
+    extensionApiPort = 14123,
+    extensionApiToken = '',
+    extensionApiAllowedOrigins
   } = appConfig || {}
 
   const pauseSSIDArray = pauseSSID ?? emptyArray
+  const allowedOriginsArray = extensionApiAllowedOrigins ?? emptyArray
 
   const [pauseSSIDInput, setPauseSSIDInput] = useState(pauseSSIDArray)
+  const [allowedOriginsInput, setAllowedOriginsInput] = useState(allowedOriginsArray)
+  const [extPortInput, setExtPortInput] = useState(extensionApiPort)
 
   const [bypass, setBypass] = useState(networkDetectionBypass)
   const [interval, setInterval] = useState(networkDetectionInterval)
@@ -43,6 +61,14 @@ const AdvancedSettings: React.FC = () => {
   useEffect(() => {
     setPauseSSIDInput(pauseSSIDArray)
   }, [pauseSSIDArray])
+
+  useEffect(() => {
+    setAllowedOriginsInput(allowedOriginsArray)
+  }, [allowedOriginsArray])
+
+  useEffect(() => {
+    setExtPortInput(extensionApiPort)
+  }, [extensionApiPort])
 
   return (
     <SettingCard title="更多设置">
@@ -288,6 +314,152 @@ const AdvancedSettings: React.FC = () => {
         onChange={(list) => setPauseSSIDInput(list as string[])}
         divider={false}
       />
+
+      <SettingItem
+        title="浏览器扩展 API"
+        actions={
+          <Tooltip content="仅监听 127.0.0.1，只读查询；必须携带 Bearer Token。建议同时配置允许的扩展 Origin。">
+            <Button isIconOnly size="sm" variant="light">
+              <IoIosHelpCircle className="text-lg" />
+            </Button>
+          </Tooltip>
+        }
+        divider
+      >
+        <Switch
+          size="sm"
+          isSelected={extensionApiEnabled}
+          onValueChange={async (v) => {
+            try {
+              await patchAppConfig({ extensionApiEnabled: v })
+              await restartExtensionApiServer()
+              mutateAppConfig()
+            } catch (e) {
+              alert(e)
+            }
+          }}
+        />
+      </SettingItem>
+
+      {extensionApiEnabled && (
+        <>
+          <SettingItem title="扩展 API 端口" divider>
+            <div className="flex">
+              {extPortInput !== extensionApiPort && (
+                <Button
+                  size="sm"
+                  color="primary"
+                  className="mr-2"
+                  onPress={async () => {
+                    try {
+                      const port = Math.min(65535, Math.max(1, extPortInput))
+                      await patchAppConfig({ extensionApiPort: port })
+                      await restartExtensionApiServer()
+                      mutateAppConfig()
+                    } catch (e) {
+                      alert(e)
+                    }
+                  }}
+                >
+                  确认
+                </Button>
+              )}
+              <Input
+                size="sm"
+                type="number"
+                className="w-[120px]"
+                value={extPortInput.toString()}
+                min={1}
+                max={65535}
+                onValueChange={(v) => {
+                  const n = parseInt(v)
+                  setExtPortInput(Number.isFinite(n) ? n : 0)
+                }}
+              />
+            </div>
+          </SettingItem>
+
+          <SettingItem
+            title="扩展 API Token"
+            actions={
+              <div className="flex items-center gap-1">
+                <Button
+                  title="复制"
+                  isIconOnly
+                  size="sm"
+                  variant="light"
+                  onPress={async () => {
+                    try {
+                      await navigator.clipboard.writeText(extensionApiToken || '')
+                    } catch (e) {
+                      alert(e)
+                    }
+                  }}
+                >
+                  <BiCopy className="text-lg" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="light"
+                  onPress={async () => {
+                    try {
+                      await resetExtensionApiToken()
+                      mutateAppConfig()
+                    } catch (e) {
+                      alert(e)
+                    }
+                  }}
+                >
+                  重置
+                </Button>
+              </div>
+            }
+            divider
+          >
+            <Input
+              size="sm"
+              className="w-[260px]"
+              type="password"
+              value={extensionApiToken || ''}
+              isReadOnly
+            />
+          </SettingItem>
+
+          <SettingItem
+            title="允许的 Origin"
+            actions={
+              <Tooltip content="留空表示不做 Origin 白名单校验；建议填 chrome-extension://<你的扩展ID>">
+                <Button isIconOnly size="sm" variant="light">
+                  <IoIosHelpCircle className="text-lg" />
+                </Button>
+              </Tooltip>
+            }
+          >
+            {!isSameStringList(allowedOriginsInput, allowedOriginsArray) && (
+              <Button
+                size="sm"
+                color="primary"
+                onPress={async () => {
+                  try {
+                    await patchAppConfig({ extensionApiAllowedOrigins: allowedOriginsInput })
+                    await restartExtensionApiServer()
+                    mutateAppConfig()
+                  } catch (e) {
+                    alert(e)
+                  }
+                }}
+              >
+                确认
+              </Button>
+            )}
+          </SettingItem>
+          <EditableList
+            items={allowedOriginsInput}
+            onChange={(list) => setAllowedOriginsInput(list as string[])}
+            divider={false}
+          />
+        </>
+      )}
     </SettingCard>
   )
 }

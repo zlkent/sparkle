@@ -113,6 +113,15 @@ export async function startExtensionApiServer(): Promise<void> {
   const configAfter = await getAppConfig(true)
   const expectedToken = (configAfter.extensionApiToken || '').trim()
   if (!expectedToken) return
+  try {
+    await writeFile(
+      logPath(),
+      `[ExtApi]: start port=${configAfter.extensionApiPort ?? 14123} tokenLen=${expectedToken.length} tokenSha=${sha256Prefix(expectedToken)}\n`,
+      { flag: 'a' }
+    )
+  } catch {
+    // ignore
+  }
 
   const desiredPort = configAfter.extensionApiPort ?? 14123
   const port = await findAvailablePort(desiredPort)
@@ -130,7 +139,7 @@ export async function startExtensionApiServer(): Promise<void> {
     const allowedOrigins = configAfter.extensionApiAllowedOrigins
 
     if (!isAllowedOrigin(origin, allowedOrigins)) {
-      res.status(403).end()
+      res.status(403).json({ error: 'forbidden' })
       return
     }
 
@@ -156,7 +165,7 @@ export async function startExtensionApiServer(): Promise<void> {
         expectedSha: sha256Prefix(expectedToken),
         providedSha: sha256Prefix(provided)
       })
-      res.status(401).end()
+      res.status(401).json({ error: 'unauthorized' })
       return
     }
 

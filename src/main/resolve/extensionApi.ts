@@ -78,21 +78,35 @@ function shouldReflectCors(origin: string | undefined): boolean {
   return !!origin && origin.startsWith('chrome-extension://')
 }
 
-function getCallerOrigin(req: express.Request): string | undefined {
-  const origin = req.headers.origin
-  if (typeof origin === 'string') return origin
-
-  const referer = req.headers.referer
-  if (typeof referer !== 'string') return undefined
+function normalizeOrigin(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
   try {
-    return new URL(referer).origin
+    const url = new URL(trimmed)
+    if (url.origin !== 'null') return url.origin
+    if (url.protocol && url.host) return `${url.protocol}//${url.host}`
+    return trimmed.replace(/\/+$/, '') || undefined
   } catch {
-    return undefined
+    return trimmed.replace(/\/+$/, '') || undefined
   }
 }
 
+function getCallerOrigin(req: express.Request): string | undefined {
+  const origin = normalizeOrigin(req.headers.origin)
+  if (origin) return origin
+
+  const referer = req.headers.referer
+  if (typeof referer === 'string') {
+    const refererOrigin = normalizeOrigin(referer)
+    if (refererOrigin) return refererOrigin
+  }
+
+  return normalizeOrigin(req.headers['x-sparkle-extension-origin'])
+}
+
 function isAllowedOrigin(origin: string | undefined, allowedOrigins: string[] | undefined): boolean {
-  const allowlist = allowedOrigins?.filter((o) => typeof o === 'string' && o.length > 0) ?? []
+  const allowlist = allowedOrigins?.map((o) => normalizeOrigin(o)).filter((o) => !!o) ?? []
   if (allowlist.length === 0) return true
   if (!origin) return false
   return allowlist.includes(origin)

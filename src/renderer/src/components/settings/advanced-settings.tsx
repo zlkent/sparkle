@@ -10,7 +10,8 @@ import {
   resetExtensionApiToken,
   restartExtensionApiServer,
   startNetworkDetection,
-  stopNetworkDetection
+  stopNetworkDetection,
+  writeClipboardText
 } from '@renderer/utils/ipc'
 import { platform } from '@renderer/utils/init'
 import { IoIosHelpCircle } from 'react-icons/io'
@@ -390,7 +391,7 @@ const AdvancedSettings: React.FC = () => {
                   variant="light"
                   onPress={async () => {
                     try {
-                      await navigator.clipboard.writeText(extensionApiToken || '')
+                      await writeClipboardText(extensionApiToken || '')
                     } catch (e) {
                       alert(e)
                     }

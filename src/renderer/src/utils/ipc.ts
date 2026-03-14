@@ -550,6 +550,10 @@ export async function resetExtensionApiToken(): Promise<string> {
   return ipcErrorWrapper(await window.electron.ipcRenderer.invoke('resetExtensionApiToken'))
 }
 
+export async function writeClipboardText(text: string): Promise<void> {
+  return ipcErrorWrapper(await window.electron.ipcRenderer.invoke('writeClipboardText', text))
+}
+
 let applyThemeRunning = false
 const waitList: string[] = []
 export async function applyTheme(theme: string): Promise<void> {

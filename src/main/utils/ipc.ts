@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain } from 'electron'
+import { app, dialog, ipcMain, clipboard } from 'electron'
 import {
   mihomoChangeProxy,
   mihomoCloseConnections,
@@ -333,6 +333,9 @@ export function registerIpcMainHandlers(): void {
   ipcMain.handle('stopNetworkDetection', ipcErrorWrapper(stopNetworkDetection))
   ipcMain.handle('restartExtensionApiServer', ipcErrorWrapper(restartExtensionApiServer))
   ipcMain.handle('resetExtensionApiToken', ipcErrorWrapper(resetExtensionApiToken))
+  ipcMain.handle('writeClipboardText', (_e, text) => {
+    clipboard.writeText(typeof text === 'string' ? text : String(text ?? ''))
+  })
   ipcMain.handle('quitApp', () => app.quit())
   ipcMain.handle('notDialogQuit', () => {
     setNotQuitDialog()

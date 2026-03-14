@@ -51,9 +51,7 @@ function decryptConfig(config: AppConfig): AppConfig {
   for (const field of ENCRYPTED_FIELDS) {
     const value = result[field]
     if (value && typeof value === 'string') {
-      if (!isEncrypted(value)) {
-        ;(result[field] as string) = ''
-      } else {
+      if (isEncrypted(value)) {
         ;(result[field] as string) = decryptString(value)
       }
     }

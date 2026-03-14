@@ -1,9 +1,11 @@
 import http from 'http'
 import crypto from 'crypto'
 import express from 'express'
+import { writeFile } from 'fs/promises'
 import { getAppConfig, patchAppConfig } from '../config'
 import { findAvailablePort } from './server'
 import { getConnectionCacheTimestamp, matchConnectionByHost } from '../core/connectionCache'
+import { logPath } from '../utils/dirs'
 
 export let extensionApiPort: number | undefined
 let extensionApiServer: http.Server | undefined
@@ -31,6 +33,30 @@ function safeEqual(a: string, b: string): boolean {
   const bBuf = Buffer.from(b)
   if (aBuf.length !== bBuf.length) return false
   return crypto.timingSafeEqual(aBuf, bBuf)
+}
+
+function sha256Prefix(value: string): string {
+  if (!value) return ''
+  return crypto.createHash('sha256').update(value).digest('hex').slice(0, 12)
+}
+
+async function logAuthFailure(meta: {
+  origin?: string
+  expectedLen: number
+  providedLen: number
+  expectedSha: string
+  providedSha: string
+}): Promise<void> {
+  try {
+    const line =
+      `[ExtApi]: 401 auth failed ` +
+      `origin=${meta.origin || '-'} ` +
+      `expectedLen=${meta.expectedLen} providedLen=${meta.providedLen} ` +
+      `expectedSha=${meta.expectedSha || '-'} providedSha=${meta.providedSha || '-'}\n`
+    await writeFile(logPath(), line, { flag: 'a' })
+  } catch {
+    // ignore
+  }
 }
 
 function extractHostname(urlOrHost: string): string {
@@ -98,6 +124,8 @@ export async function startExtensionApiServer(): Promise<void> {
   app.disable('x-powered-by')
 
   app.use((req, res, next) => {
+    res.setHeader('X-Sparkle-Ext-Api', '1')
+
     const origin = getCallerOrigin(req)
     const allowedOrigins = configAfter.extensionApiAllowedOrigins
 
@@ -121,6 +149,13 @@ export async function startExtensionApiServer(): Promise<void> {
 
     const provided = parseBearerToken(req.headers.authorization)
     if (!safeEqual(provided, expectedToken)) {
+      void logAuthFailure({
+        origin: typeof origin === 'string' ? origin : undefined,
+        expectedLen: expectedToken.length,
+        providedLen: provided.length,
+        expectedSha: sha256Prefix(expectedToken),
+        providedSha: sha256Prefix(provided)
+      })
       res.status(401).end()
       return
     }

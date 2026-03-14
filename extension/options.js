@@ -82,9 +82,8 @@ function reset() {
 
 async function testConnection() {
   setStatus('测试中…')
-  const items = await chrome.storage.sync.get(DEFAULTS)
-  const baseUrl = normalizeBaseUrl(items.baseUrl)
-  const token = sanitizeToken(items.token)
+  const baseUrl = normalizeBaseUrl($('baseUrl').value)
+  const token = sanitizeToken($('token').value)
   if (!token) {
     setStatus('缺少 Token。')
     return

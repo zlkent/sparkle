@@ -20,6 +20,11 @@ function normalizeBaseUrl(s) {
   return t.replace(/\/+$/, '')
 }
 
+function sanitizeToken(s) {
+  const t = String(s || '').trim()
+  return t.replace(/^Bearer\s+/i, '').trim()
+}
+
 function renderToggle(el, on) {
   el.classList.toggle('on', !!on)
 }
@@ -56,7 +61,7 @@ function load() {
 
 function save() {
   const baseUrl = normalizeBaseUrl($('baseUrl').value)
-  const token = $('token').value.trim()
+  const token = sanitizeToken($('token').value)
   const staleMsRaw = parseInt($('staleMs').value)
   const staleMs = Number.isFinite(staleMsRaw) && staleMsRaw >= 0 ? staleMsRaw : DEFAULTS.staleMs
 
@@ -79,7 +84,7 @@ async function testConnection() {
   setStatus('测试中…')
   const items = await chrome.storage.sync.get(DEFAULTS)
   const baseUrl = normalizeBaseUrl(items.baseUrl)
-  const token = String(items.token || '').trim()
+  const token = sanitizeToken(items.token)
   if (!token) {
     setStatus('缺少 Token。')
     return

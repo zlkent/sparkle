@@ -12,6 +12,11 @@ const DEBOUNCE_MS = 400
 const debounceTimers = new Map()
 let currentSettings = { ...SYNC_DEFAULTS }
 
+function sanitizeToken(s) {
+  const t = String(s || '').trim()
+  return t.replace(/^Bearer\\s+/i, '').trim()
+}
+
 function normalizeBaseUrl(baseUrl) {
   const s = String(baseUrl || '').trim()
   if (!s) return SYNC_DEFAULTS.baseUrl
@@ -94,7 +99,8 @@ async function fetchConnectionForTab(tabId, tabUrl, reason = 'unknown') {
     return cache
   }
 
-  if (!currentSettings.token) {
+  const token = sanitizeToken(currentSettings.token)
+  if (!token) {
     const cache = { tabId, url, reason, state: 'no_token', updatedAt: Date.now() }
     await setTabCache(tabId, cache)
     await updateBadgeIfEnabled(tabId, cache)
@@ -106,7 +112,7 @@ async function fetchConnectionForTab(tabId, tabUrl, reason = 'unknown') {
   try {
     res = await fetch(endpoint, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${currentSettings.token}` }
+      headers: { Authorization: `Bearer ${token}` }
     })
   } catch {
     const cache = { tabId, url, reason, state: 'offline', updatedAt: Date.now() }
@@ -207,7 +213,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 async function initSettings() {
   try {
-    currentSettings = await getSyncSettings()
+    const s = await getSyncSettings()
+    currentSettings = { ...s, token: sanitizeToken(s.token) }
   } catch {
     currentSettings = { ...SYNC_DEFAULTS }
   }
@@ -221,5 +228,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
   for (const [k, v] of Object.entries(changes)) {
     next[k] = v.newValue
   }
-  currentSettings = { ...SYNC_DEFAULTS, ...next }
+  const merged = { ...SYNC_DEFAULTS, ...next }
+  currentSettings = { ...merged, token: sanitizeToken(merged.token) }
 })

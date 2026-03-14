@@ -201,7 +201,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: false, error: 'unknown message' })
   })()
   return true
-})
+});
 
 (async () => {
   try {
@@ -209,7 +209,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   } catch {
     currentSettings = { ...SYNC_DEFAULTS }
   }
-})()
+})();
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync') return

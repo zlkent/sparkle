@@ -420,7 +420,7 @@ const AdvancedSettings: React.FC = () => {
             <Input
               size="sm"
               className="w-[260px]"
-              type="password"
+              type="text"
               value={extensionApiToken || ''}
               isReadOnly
             />

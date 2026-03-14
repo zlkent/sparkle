@@ -180,36 +180,40 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   }
 })
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  ;(async () => {
-    const type = msg && msg.type
-    if (type === 'getCached') {
-      const cache = await getTabCache(msg.tabId)
-      sendResponse({ ok: true, cache })
-      return
-    }
-    if (type === 'refresh') {
-      const cache = await fetchConnectionForTab(msg.tabId, msg.url, msg.reason || 'manual')
-      sendResponse({ ok: true, cache })
-      return
-    }
-    if (type === 'clearBadge') {
-      await setBadge(msg.tabId, '', null)
-      sendResponse({ ok: true })
-      return
-    }
-    sendResponse({ ok: false, error: 'unknown message' })
-  })()
-  return true
-});
+async function handleMessage(msg, sendResponse) {
+  const type = msg && msg.type
+  if (type === 'getCached') {
+    const cache = await getTabCache(msg.tabId)
+    sendResponse({ ok: true, cache })
+    return
+  }
+  if (type === 'refresh') {
+    const cache = await fetchConnectionForTab(msg.tabId, msg.url, msg.reason || 'manual')
+    sendResponse({ ok: true, cache })
+    return
+  }
+  if (type === 'clearBadge') {
+    await setBadge(msg.tabId, '', null)
+    sendResponse({ ok: true })
+    return
+  }
+  sendResponse({ ok: false, error: 'unknown message' })
+}
 
-(async () => {
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  void handleMessage(msg, sendResponse)
+  return true
+})
+
+async function initSettings() {
   try {
     currentSettings = await getSyncSettings()
   } catch {
     currentSettings = { ...SYNC_DEFAULTS }
   }
-})();
+}
+
+void initSettings()
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync') return

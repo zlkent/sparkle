@@ -23,7 +23,7 @@ export async function resetExtensionApiToken(): Promise<string> {
 
 function parseBearerToken(value: unknown): string {
   if (typeof value !== 'string') return ''
-  const match = /^Bearer\\s+(.+)$/.exec(value)
+  const match = /^Bearer\s+(.+)$/.exec(value)
   return match?.[1]?.trim() ?? ''
 }
 

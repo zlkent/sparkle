@@ -72,7 +72,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
         run: npm install -g pnpm
@@ -118,9 +118,9 @@ jobs:
         run: |
           export ELECTRON_MIRROR="https://github.com/darkyzhou/electron-loong64/releases/download/"
           export electron_use_remote_checksums=1
-          SKIP_PREPARE=1 pnpm install electron@37.2.5 -D
+          SKIP_PREPARE=1 pnpm install electron@39.2.7 -D
           pnpm remove electron-builder
-          SKIP_PREPARE=1 pnpm install @loongdotjs/electron-builder@26.0.12-1 -D
+          SKIP_PREPARE=1 pnpm install @loongdotjs/electron-builder@26.8.2-loong1 -D
 
       - name: Install Dependencies and Prepare
         env:
@@ -171,7 +171,7 @@ jobs:
         run: SKIP_CHANGELOG=1 pnpm updater
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.os }}-${{ matrix.arch }}${{ matrix.format && '-' || '' }}${{ matrix.format || '' }}
           path: |
@@ -186,10 +186,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: bin/
           merge-multiple: true
@@ -225,7 +225,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: '0'
           fetch-tags: 'true'
@@ -284,7 +284,7 @@ jobs:
           SKIP_PREPARE=1 pnpm install
           pnpm updater
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: bin/
           merge-multiple: true

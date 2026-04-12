@@ -109,9 +109,7 @@ if (
   }
 }
 
-if (process.platform === 'win32' && is.dev) {
-  patchControledMihomoConfig({ tun: { enable: false } })
-}
+const shouldDisableTunInDev = process.platform === 'win32' && is.dev
 
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -137,7 +135,9 @@ if (process.platform === 'linux') {
   app.relaunch = customRelaunch
 }
 
-if (process.platform === 'win32' && !exePath().startsWith('C')) {
+const electronMajor = parseInt(process.versions.electron.split('.')[0], 10) || 0
+
+if (process.platform === 'win32' && !exePath().startsWith('C') && electronMajor < 38) {
   // https://github.com/electron/electron/issues/43278
   // https://github.com/electron/electron/issues/36698
   app.commandLine.appendSwitch('in-process-gpu')
@@ -273,9 +273,13 @@ app.whenReady().then(async () => {
   electronApp.setAppUserModelId('sparkle.app')
   try {
     await initPromise
+    if (shouldDisableTunInDev) {
+      await patchControledMihomoConfig({ tun: { enable: false } })
+    }
   } catch (e) {
     dialog.showErrorBox('应用初始化失败', `${e}`)
     app.quit()
+    return
   }
 
   // Default open or close DevTools by F12 in development
@@ -523,7 +527,8 @@ export async function createWindow(appConfig?: AppConfig): Promise<void> {
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         spellcheck: false,
-        sandbox: false
+        sandbox: false,
+        ...(is.dev ? { webSecurity: false } : {})
       }
     })
     mainWindowState.manage(mainWindow)

@@ -38,6 +38,8 @@ import ConfirmModal from '@renderer/components/base/base-confirm'
 
 let navigate: NavigateFunction
 
+const interactiveSelector = 'button:not(.pointer-events-none), [role="switch"]'
+
 const defaultSiderOrder = [
   'sysproxy',
   'tun',
@@ -53,6 +55,25 @@ const defaultSiderOrder = [
   'log',
   'substore'
 ]
+
+const siderCardRouteMap = {
+  'sysproxy-card': '/sysproxy',
+  'tun-card': '/tun',
+  'profile-card': '/profiles',
+  'proxy-card': '/proxies',
+  'mihomo-core-card': '/mihomo',
+  'conn-card': '/connections',
+  'dns-card': '/dns',
+  'sniff-card': '/sniffer',
+  'log-card': '/logs',
+  'rule-card': '/rules',
+  'resource-card': '/resources',
+  'override-card': '/override',
+  'substore-card': '/substore'
+} as const
+const siderCardSelector = Object.keys(siderCardRouteMap)
+  .map((className) => `.${className}`)
+  .join(', ')
 
 const App: React.FC = () => {
   const { appConfig, patchAppConfig } = useAppConfig()
@@ -73,7 +94,13 @@ const App: React.FC = () => {
   const siderWidthValueRef = useRef(siderWidthValue)
   const [resizing, setResizing] = useState(false)
   const resizingRef = useRef(resizing)
-  const sensors = useSensors(useSensor(PointerSensor))
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8
+      }
+    })
+  )
   const { setTheme, systemTheme } = useTheme()
   navigate = useNavigate()
   const location = useLocation()
@@ -144,35 +171,28 @@ const App: React.FC = () => {
 
   const onDragEnd = async (event: DragEndEvent): Promise<void> => {
     const { active, over } = event
-    if (over) {
-      if (active.id !== over.id) {
-        const newOrder = order.slice()
-        const activeIndex = newOrder.indexOf(active.id as string)
-        const overIndex = newOrder.indexOf(over.id as string)
-        newOrder.splice(activeIndex, 1)
-        newOrder.splice(overIndex, 0, active.id as string)
-        setOrder(newOrder)
-        await patchAppConfig({ siderOrder: newOrder })
-        return
-      }
+    if (over && active.id !== over.id) {
+      const newOrder = order.slice()
+      const activeIndex = newOrder.indexOf(active.id as string)
+      const overIndex = newOrder.indexOf(over.id as string)
+      newOrder.splice(activeIndex, 1)
+      newOrder.splice(overIndex, 0, active.id as string)
+      setOrder(newOrder)
+      await patchAppConfig({ siderOrder: newOrder })
     }
-    navigate(navigateMap[active.id as string])
   }
 
-  const navigateMap = {
-    sysproxy: 'sysproxy',
-    tun: 'tun',
-    profile: 'profiles',
-    proxy: 'proxies',
-    mihomo: 'mihomo',
-    connection: 'connections',
-    dns: 'dns',
-    sniff: 'sniffer',
-    log: 'logs',
-    rule: 'rules',
-    resource: 'resources',
-    override: 'override',
-    substore: 'substore'
+  const onSiderClickCapture = (event: React.MouseEvent<HTMLDivElement>): void => {
+    const target = event.target as HTMLElement
+    if (target.closest(interactiveSelector)) return
+
+    const clickedCard = target.closest(siderCardSelector)
+    if (!clickedCard) return
+
+    const route = Object.entries(siderCardRouteMap).find(([className]) =>
+      clickedCard.classList.contains(className)
+    )?.[1]
+    if (route) navigate(route)
   }
 
   const componentMap = {
@@ -311,7 +331,7 @@ const App: React.FC = () => {
             }
           }}
           onConfirm={() => handleProfileInstallConfirm(true)}
-          className="w-[500px]"
+          className="w-125"
         />
       )}
       {showOverrideInstallConfirm && overrideInstallData && (
@@ -340,10 +360,8 @@ const App: React.FC = () => {
       )}
       {siderWidthValue === narrowWidth ? (
         <div style={{ width: `${narrowWidth}px` }} className="side h-full">
-          <div className="app-drag flex justify-center items-center z-40 bg-transparent h-[45px]">
-            {platform !== 'darwin' && (
-              <MihomoIcon className="h-[32px] leading-[32px] text-lg mx-px" />
-            )}
+          <div className="app-drag flex justify-center items-center z-40 bg-transparent h-11.25">
+            {platform !== 'darwin' && <MihomoIcon className="h-8 leading-8 text-lg mx-px" />}
           </div>
           <div
             className={`${latest ? 'h-[calc(100%-275px)]' : 'h-[calc(100%-227px)]'} overflow-y-auto no-scrollbar`}
@@ -377,13 +395,13 @@ const App: React.FC = () => {
           className="side h-full overflow-y-auto no-scrollbar"
         >
           <div
-            className={`app-drag sticky top-0 z-40 ${disableAnimation ? 'bg-background/95 backdrop-blur-sm' : 'bg-transparent backdrop-blur'} h-[49px]`}
+            className={`app-drag sticky top-0 z-40 ${disableAnimation ? 'bg-background/95 backdrop-blur-sm' : 'bg-transparent backdrop-blur'} h-12.25`}
           >
             <div
-              className={`flex justify-between p-2 ${!useWindowFrame && platform === 'darwin' ? 'ml-[60px]' : ''}`}
+              className={`flex justify-between p-2 ${!useWindowFrame && platform === 'darwin' ? 'ml-15' : ''}`}
             >
               <div className="flex ml-1">
-                <h3 className="text-lg font-bold leading-[32px]">Sparkle</h3>
+                <h3 className="text-lg font-bold leading-8">Sparkle</h3>
               </div>
               {latest && latest.version && <UpdaterButton latest={latest} />}
               <Button
@@ -405,7 +423,7 @@ const App: React.FC = () => {
           </div>
           <div style={{ overflowX: 'clip' }}>
             <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}>
-              <div className="grid grid-cols-2 gap-2 m-2">
+              <div className="grid grid-cols-2 gap-2 m-2" onClickCapture={onSiderClickCapture}>
                 <SortableContext items={order}>
                   {order.map((key: string) => {
                     const Component = componentMap[key]

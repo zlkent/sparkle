@@ -78,8 +78,8 @@ export async function mihomoUpgradeUI(): Promise<void> {
   return ipcErrorWrapper(await window.electron.ipcRenderer.invoke('mihomoUpgradeUI'))
 }
 
-export async function mihomoUpgrade(): Promise<void> {
-  return ipcErrorWrapper(await window.electron.ipcRenderer.invoke('mihomoUpgrade'))
+export async function mihomoUpgrade(channel: string): Promise<void> {
+  return ipcErrorWrapper(await window.electron.ipcRenderer.invoke('mihomoUpgrade', channel))
 }
 
 export async function mihomoProxyDelay(
@@ -175,6 +175,12 @@ export async function getFileStr(id: string): Promise<string> {
 
 export async function setFileStr(id: string, str: string): Promise<void> {
   return ipcErrorWrapper(await window.electron.ipcRenderer.invoke('setFileStr', id, str))
+}
+
+export async function saveFileStrWithElevation(id: string, str: string): Promise<void> {
+  return ipcErrorWrapper(
+    await window.electron.ipcRenderer.invoke('saveFileStrWithElevation', id, str)
+  )
 }
 
 export async function setProfileStr(id: string, str: string): Promise<void> {

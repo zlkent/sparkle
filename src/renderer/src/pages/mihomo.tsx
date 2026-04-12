@@ -98,7 +98,7 @@ const Mihomo: React.FC = () => {
   const handleCoreUpgrade = async (): Promise<void> => {
     try {
       setUpgrading(true)
-      await mihomoUpgrade()
+      await mihomoUpgrade(core === 'mihomo' ? 'release' : 'alpha')
       setTimeout(() => PubSub.publish('mihomo-core-changed'), 2000)
     } catch (e) {
       if (typeof e === 'string' && e.includes('already using latest version')) {
@@ -130,6 +130,8 @@ const Mihomo: React.FC = () => {
   }
 
   const handlePermissionModeChange = async (key: string): Promise<void> => {
+    if (key === corePermissionMode) return
+
     if (platform === 'win32') {
       if (key !== 'elevated') {
         if (await checkElevateTask()) {
@@ -293,7 +295,7 @@ const Mihomo: React.FC = () => {
         >
           <Select
             classNames={{ trigger: 'data-[hover=true]:bg-default-200' }}
-            className="w-[150px]"
+            className="w-37.5"
             size="sm"
             selectedKeys={new Set([core])}
             disallowEmptySelection={true}
@@ -310,7 +312,7 @@ const Mihomo: React.FC = () => {
           <SettingItem title="系统内核路径选择" divider>
             <Select
               classNames={{ trigger: 'data-[hover=true]:bg-default-200' }}
-              className="w-[350px]"
+              className="w-87.5"
               size="sm"
               selectedKeys={new Set([appConfig?.systemCorePath || ''])}
               disallowEmptySelection={systemCorePaths.length > 0}
@@ -368,7 +370,7 @@ const Mihomo: React.FC = () => {
           <Input
             size="sm"
             type="number"
-            className="w-[100px]"
+            className="w-25"
             value={maxLogDays.toString()}
             onValueChange={(v) => patchAppConfig({ maxLogDays: parseInt(v) })}
           />
@@ -376,7 +378,7 @@ const Mihomo: React.FC = () => {
         <SettingItem title="日志等级">
           <Select
             classNames={{ trigger: 'data-[hover=true]:bg-default-200' }}
-            className="w-[100px]"
+            className="w-25"
             size="sm"
             selectedKeys={new Set([logLevel])}
             disallowEmptySelection={true}

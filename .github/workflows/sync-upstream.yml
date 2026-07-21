@@ -1,0 +1,183 @@
+name: Sync Upstream Sparkle
+
+on:
+  schedule:
+    # Avoid the top of the hour, when scheduled GitHub workflows are more likely to be delayed.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Validate the upstream merge without pushing or building'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Fetch and compare upstream
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/xishang0128/sparkle.git 2>/dev/null || true
+          git fetch --no-tags upstream master
+
+          upstream_sha="$(git rev-parse upstream/master)"
+          echo "sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${upstream_sha:0:12}" >> "$GITHUB_OUTPUT"
+
+          if git merge-base --is-ancestor "$upstream_sha" HEAD; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo "Upstream ${upstream_sha:0:12} is already included."
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            echo "Upstream ${upstream_sha:0:12} needs to be merged."
+          fi
+
+      - name: Merge upstream without committing
+        id: merge
+        if: steps.upstream.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -uo pipefail
+          if git merge --no-ff --no-commit upstream/master \
+            -m "同步：合并上游 Sparkle ${{ steps.upstream.outputs.short_sha }}"; then
+            echo 'result=ready' >> "$GITHUB_OUTPUT"
+            echo 'Upstream merge is ready for validation.' | tee sync.log
+            exit 0
+          fi
+
+          git diff --name-only --diff-filter=U > sync.log || true
+          git merge --abort || true
+          echo 'result=conflict' >> "$GITHUB_OUTPUT"
+          echo 'Automatic upstream merge has conflicts.' >> sync.log
+
+      - name: Detect required pnpm version
+        id: pnpm
+        if: steps.merge.outputs.result == 'ready'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').packageManager?.replace(/^pnpm@/, '') || 'latest'")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up pnpm
+        if: steps.merge.outputs.result == 'ready'
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.pnpm.outputs.version }}
+
+      - name: Validate merged source
+        id: validate
+        if: steps.merge.outputs.result == 'ready'
+        shell: bash
+        run: |
+          set +e
+          {
+            pnpm install --frozen-lockfile &&
+              pnpm typecheck &&
+              node scripts/check-ext-api-bearer-parse.mjs &&
+              node scripts/check-ext-api-origin-fallback.mjs &&
+              node scripts/check-ext-api-token-visibility.mjs
+          } 2>&1 | tee validation.log
+          status=${PIPESTATUS[0]}
+
+          if [ "$status" -eq 0 ]; then
+            echo 'result=passed' >> "$GITHUB_OUTPUT"
+          else
+            echo 'result=failed' >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Commit and push verified merge
+        id: push
+        if: steps.validate.outputs.result == 'passed' && inputs.dry_run != true
+        shell: bash
+        run: |
+          set +e
+          if ! git commit -m "同步：合并上游 Sparkle ${{ steps.upstream.outputs.short_sha }}"; then
+            echo 'result=failed' >> "$GITHUB_OUTPUT"
+            echo 'Creating the verified merge commit failed.' >> sync.log
+            exit 0
+          fi
+
+          if git push origin HEAD:master; then
+            echo 'result=pushed' >> "$GITHUB_OUTPUT"
+          else
+            echo 'result=failed' >> "$GITHUB_OUTPUT"
+            echo 'Push to master failed. Check branch protection and Actions permissions.' >> sync.log
+          fi
+          exit 0
+
+      - name: Trigger verified build and prerelease
+        if: steps.push.outputs.result == 'pushed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --ref master
+
+      - name: Upload failure diagnostics
+        if: always() && steps.upstream.outputs.changed == 'true' && (steps.merge.outputs.result == 'conflict' || steps.validate.outputs.result == 'failed' || steps.push.outputs.result == 'failed')
+        uses: actions/upload-artifact@v7
+        with:
+          name: upstream-sync-${{ steps.upstream.outputs.short_sha }}-diagnostics
+          path: |
+            sync.log
+            validation.log
+          if-no-files-found: warn
+
+      - name: Create one issue for a failed sync
+        if: always() && steps.upstream.outputs.changed == 'true' && (steps.merge.outputs.result == 'conflict' || steps.validate.outputs.result == 'failed' || steps.push.outputs.result == 'failed')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_SHA: ${{ steps.upstream.outputs.sha }}
+          UPSTREAM_SHORT_SHA: ${{ steps.upstream.outputs.short_sha }}
+          MERGE_RESULT: ${{ steps.merge.outputs.result }}
+          VALIDATE_RESULT: ${{ steps.validate.outputs.result }}
+          PUSH_RESULT: ${{ steps.push.outputs.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="上游同步失败：${UPSTREAM_SHORT_SHA}"
+          existing="$(gh issue list --state open --search "${title} in:title" --json number --jq 'length')"
+          if [ "$existing" != '0' ]; then
+            echo "An open issue already tracks ${UPSTREAM_SHORT_SHA}."
+            exit 0
+          fi
+
+          gh issue create \
+            --title "$title" \
+            --body "上游提交 [\`${UPSTREAM_SHA}\`](https://github.com/xishang0128/sparkle/commit/${UPSTREAM_SHA}) 未自动进入本 Fork。\n\n- merge: \`${MERGE_RESULT:-not-run}\`\n- validation: \`${VALIDATE_RESULT:-not-run}\`\n- push: \`${PUSH_RESULT:-not-run}\`\n- workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\n\n请下载本次 workflow 的 diagnostics artifact 后处理冲突或回归。"
+
+      - name: Summarize result
+        if: always()
+        run: |
+          {
+            echo '## Upstream synchronization'
+            echo
+            echo "- upstream: \`${{ steps.upstream.outputs.short_sha || 'not-fetched' }}\`"
+            echo "- changed: \`${{ steps.upstream.outputs.changed || 'false' }}\`"
+            echo "- merge: \`${{ steps.merge.outputs.result || 'not-run' }}\`"
+            echo "- validation: \`${{ steps.validate.outputs.result || 'not-run' }}\`"
+            echo "- push: \`${{ steps.push.outputs.result || 'not-run' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

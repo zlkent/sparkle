@@ -7,7 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Validate the upstream merge without pushing or building'
+        description: 'Adapt and validate without pushing or building'
+        required: false
+        default: true
+        type: boolean
+      publish:
+        description: 'Push a verified adaptation and trigger the prerelease build'
         required: false
         default: false
         type: boolean
@@ -15,7 +20,6 @@ on:
 permissions:
   actions: write
   contents: write
-  issues: write
 
 concurrency:
   group: upstream-sync
@@ -23,6 +27,8 @@ concurrency:
 
 jobs:
   sync:
+    # Scheduled runs publish only after the repository variable is deliberately enabled.
+    if: github.event_name == 'workflow_dispatch' || vars.AUTO_PUBLISH == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout fork
@@ -52,30 +58,65 @@ jobs:
             echo "Upstream ${upstream_sha:0:12} is already included."
           else
             echo 'changed=true' >> "$GITHUB_OUTPUT"
-            echo "Upstream ${upstream_sha:0:12} needs to be merged."
+            echo "Upstream ${upstream_sha:0:12} needs adaptation."
           fi
 
-      - name: Merge upstream without committing
+      - name: Start upstream merge
         id: merge
         if: steps.upstream.outputs.changed == 'true'
         shell: bash
         run: |
-          set -uo pipefail
-          if git merge --no-ff --no-commit upstream/master \
-            -m "同步：合并上游 Sparkle ${{ steps.upstream.outputs.short_sha }}"; then
-            echo 'result=ready' >> "$GITHUB_OUTPUT"
-            echo 'Upstream merge is ready for validation.' | tee sync.log
-            exit 0
+          set +e
+          git merge --no-ff --no-commit upstream/master \
+            -m "同步：适配上游 Sparkle ${{ steps.upstream.outputs.short_sha }}"
+          status=$?
+          git diff --name-only --diff-filter=U > merge-conflicts.txt
+          if [ "$status" -eq 0 ]; then
+            echo 'result=clean' >> "$GITHUB_OUTPUT"
+          else
+            echo 'result=conflict' >> "$GITHUB_OUTPUT"
           fi
+          exit 0
 
-          git diff --name-only --diff-filter=U > sync.log || true
-          git merge --abort || true
-          echo 'result=conflict' >> "$GITHUB_OUTPUT"
-          echo 'Automatic upstream merge has conflicts.' >> sync.log
+      - name: Adapt fork customizations with Codex
+        if: steps.upstream.outputs.changed == 'true'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ vars.OPENAI_RESPONSES_ENDPOINT }}
+          model: ${{ vars.CODEX_MODEL }}
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          allow-bots: true
+          prompt: |
+            You maintain the zlkent/sparkle fork. The repository has a no-commit merge of
+            upstream/master into the fork. Adapt the fork to the latest upstream architecture.
+
+            Preserve and make functional the fork-specific browser extension API:
+            - src/main/resolve/extensionApi.ts and its lifecycle, IPC, config fields, and tests.
+            - The independent "Sparkle Proxy Status" settings card, including plaintext token
+              display, token reset/copy, port, and Origin allowlist controls.
+            - All application updater and release URLs must use zlkent/sparkle, not the upstream fork.
+
+            Resolve every merge conflict, including modify/delete conflicts. Do not use a blanket
+            ours/theirs strategy: update the custom code to the current upstream APIs and preserve
+            compatible upstream behavior. Do not remove the extension API or its regression scripts.
+            Do not edit .github/workflows/sync-upstream.yml. Do not commit. Stage every resolved file
+            with git add so the merge can be committed later.
+
+      - name: Require a fully resolved merge
+        if: steps.upstream.outputs.changed == 'true'
+        shell: bash
+        run: |
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo 'Codex left unresolved merge entries:' >&2
+            git diff --name-only --diff-filter=U >&2
+            exit 1
+          fi
 
       - name: Detect required pnpm version
         id: pnpm
-        if: steps.merge.outputs.result == 'ready'
+        if: steps.upstream.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -83,26 +124,28 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm
-        if: steps.merge.outputs.result == 'ready'
+        if: steps.upstream.outputs.changed == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: ${{ steps.pnpm.outputs.version }}
 
-      - name: Validate merged source
-        id: validate
-        if: steps.merge.outputs.result == 'ready'
+      - name: Install merged dependencies
+        if: steps.upstream.outputs.changed == 'true'
+        run: CI=true pnpm install --frozen-lockfile
+
+      - name: Capture initial validation failures
+        id: initial-validation
+        if: steps.upstream.outputs.changed == 'true'
         shell: bash
         run: |
           set +e
           {
-            pnpm install --frozen-lockfile &&
-              pnpm typecheck &&
+            pnpm typecheck &&
               node scripts/check-ext-api-bearer-parse.mjs &&
               node scripts/check-ext-api-origin-fallback.mjs &&
               node scripts/check-ext-api-token-visibility.mjs
           } 2>&1 | tee validation.log
           status=${PIPESTATUS[0]}
-
           if [ "$status" -eq 0 ]; then
             echo 'result=passed' >> "$GITHUB_OUTPUT"
           else
@@ -110,25 +153,40 @@ jobs:
           fi
           exit 0
 
-      - name: Commit and push verified merge
+      - name: Fix validation failures with Codex
+        if: steps.initial-validation.outputs.result == 'failed'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ vars.OPENAI_RESPONSES_ENDPOINT }}
+          model: ${{ vars.CODEX_MODEL }}
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          allow-bots: true
+          prompt: |
+            The upstream adaptation is complete but validation failed. Read validation.log, then fix
+            only the reported failures while preserving the latest upstream behavior and all fork
+            browser extension API functionality. Do not weaken, delete, or bypass checks. Do not edit
+            .github/workflows/sync-upstream.yml. Do not commit. Stage changed source files with git add.
+
+      - name: Verify adapted source
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          pnpm typecheck
+          node scripts/check-ext-api-bearer-parse.mjs
+          node scripts/check-ext-api-origin-fallback.mjs
+          node scripts/check-ext-api-token-visibility.mjs
+          git diff --check
+
+      - name: Commit and push verified adaptation
         id: push
-        if: steps.validate.outputs.result == 'passed' && inputs.dry_run != true
+        if: steps.upstream.outputs.changed == 'true' && inputs.dry_run != true && (inputs.publish == true || vars.AUTO_PUBLISH == 'true')
         shell: bash
         run: |
-          set +e
-          if ! git commit -m "同步：合并上游 Sparkle ${{ steps.upstream.outputs.short_sha }}"; then
-            echo 'result=failed' >> "$GITHUB_OUTPUT"
-            echo 'Creating the verified merge commit failed.' >> sync.log
-            exit 0
-          fi
-
-          if git push origin HEAD:master; then
-            echo 'result=pushed' >> "$GITHUB_OUTPUT"
-          else
-            echo 'result=failed' >> "$GITHUB_OUTPUT"
-            echo 'Push to master failed. Check branch protection and Actions permissions.' >> sync.log
-          fi
-          exit 0
+          git add -A
+          git commit -m "同步：适配上游 Sparkle ${{ steps.upstream.outputs.short_sha }}"
+          git push origin HEAD:master
+          echo 'result=pushed' >> "$GITHUB_OUTPUT"
 
       - name: Trigger verified build and prerelease
         if: steps.push.outputs.result == 'pushed'
@@ -136,48 +194,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run build.yml --ref master
 
-      - name: Upload failure diagnostics
-        if: always() && steps.upstream.outputs.changed == 'true' && (steps.merge.outputs.result == 'conflict' || steps.validate.outputs.result == 'failed' || steps.push.outputs.result == 'failed')
+      - name: Upload adaptation diagnostics
+        if: always() && steps.upstream.outputs.changed == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: upstream-sync-${{ steps.upstream.outputs.short_sha }}-diagnostics
+          name: upstream-adaptation-${{ steps.upstream.outputs.short_sha }}
           path: |
-            sync.log
+            merge-conflicts.txt
             validation.log
           if-no-files-found: warn
-
-      - name: Create one issue for a failed sync
-        if: always() && steps.upstream.outputs.changed == 'true' && (steps.merge.outputs.result == 'conflict' || steps.validate.outputs.result == 'failed' || steps.push.outputs.result == 'failed')
-        env:
-          GH_TOKEN: ${{ github.token }}
-          UPSTREAM_SHA: ${{ steps.upstream.outputs.sha }}
-          UPSTREAM_SHORT_SHA: ${{ steps.upstream.outputs.short_sha }}
-          MERGE_RESULT: ${{ steps.merge.outputs.result }}
-          VALIDATE_RESULT: ${{ steps.validate.outputs.result }}
-          PUSH_RESULT: ${{ steps.push.outputs.result }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          title="上游同步失败：${UPSTREAM_SHORT_SHA}"
-          existing="$(gh issue list --state open --search "${title} in:title" --json number --jq 'length')"
-          if [ "$existing" != '0' ]; then
-            echo "An open issue already tracks ${UPSTREAM_SHORT_SHA}."
-            exit 0
-          fi
-
-          gh issue create \
-            --title "$title" \
-            --body "上游提交 [\`${UPSTREAM_SHA}\`](https://github.com/xishang0128/sparkle/commit/${UPSTREAM_SHA}) 未自动进入本 Fork。\n\n- merge: \`${MERGE_RESULT:-not-run}\`\n- validation: \`${VALIDATE_RESULT:-not-run}\`\n- push: \`${PUSH_RESULT:-not-run}\`\n- workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\n\n请下载本次 workflow 的 diagnostics artifact 后处理冲突或回归。"
 
       - name: Summarize result
         if: always()
         run: |
           {
-            echo '## Upstream synchronization'
+            echo '## Upstream adaptation'
             echo
-            echo "- upstream: \`${{ steps.upstream.outputs.short_sha || 'not-fetched' }}\`"
-            echo "- changed: \`${{ steps.upstream.outputs.changed || 'false' }}\`"
-            echo "- merge: \`${{ steps.merge.outputs.result || 'not-run' }}\`"
-            echo "- validation: \`${{ steps.validate.outputs.result || 'not-run' }}\`"
-            echo "- push: \`${{ steps.push.outputs.result || 'not-run' }}\`"
+            echo "- upstream: ${{ steps.upstream.outputs.short_sha || 'not-fetched' }}"
+            echo "- changed: ${{ steps.upstream.outputs.changed || 'false' }}"
+            echo "- initial merge: ${{ steps.merge.outputs.result || 'not-run' }}"
+            echo "- initial validation: ${{ steps.initial-validation.outputs.result || 'not-run' }}"
+            echo "- pushed: ${{ steps.push.outputs.result || 'not-pushed' }}"
           } >> "$GITHUB_STEP_SUMMARY"

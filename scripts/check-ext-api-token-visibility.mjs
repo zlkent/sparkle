@@ -3,14 +3,14 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const path = resolve(scriptDir, '../src/renderer/src/components/settings/advanced-settings.tsx')
+const path = resolve(scriptDir, '../src/renderer/src/components/settings/sparkle-proxy-status.tsx')
 
 const source = readFileSync(path, 'utf8')
 const marker = 'title="扩展 API Token"'
 const start = source.indexOf(marker)
 
 if (start < 0) {
-  console.error('FAIL: Ext API token setting block not found')
+  console.error('FAIL: Sparkle Proxy Status token setting block not found')
   process.exit(1)
 }
 

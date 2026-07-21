@@ -11,6 +11,7 @@ import { FaTelegramPlane } from 'react-icons/fa'
 import SiderConfig from '@renderer/components/settings/sider-config'
 import SubStoreConfig from '@renderer/components/settings/substore-config'
 import AppearanceConfig from '@renderer/components/settings/appearance-confis'
+import SparkleProxyStatus from '@renderer/components/settings/sparkle-proxy-status'
 
 const Settings: React.FC = () => {
   return (
@@ -37,7 +38,7 @@ const Settings: React.FC = () => {
             className="app-nodrag"
             title="GitHub 仓库"
             onPress={() => {
-              window.open('https://github.com/xishang0128/sparkle')
+              window.open('https://github.com/zlkent/sparkle')
             }}
           >
             <IoLogoGithub className="text-lg" />
@@ -63,6 +64,7 @@ const Settings: React.FC = () => {
       <SiderConfig />
       <WebdavConfig />
       <AdvancedSettings />
+      <SparkleProxyStatus />
       <ShortcutConfig />
       <Actions />
     </BasePage>
